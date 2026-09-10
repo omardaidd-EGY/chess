@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>???? ??????? 3D - ?????? ??????</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.85);
+            color: #0f0;
+            padding: 12px 15px;
+            border: 2px solid #0f0;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            z-index: 100;
+            pointer-events: none;
+            line-height: 1.5;
+        }
+        
+        #game-status {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: #ffcc00;
+            padding: 10px 25px;
+            border: 2px solid #ffcc00;
+            border-radius: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 100;
+            text-align: center;
+        }
+
+        #game-over-screen {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 2000;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+        }
+        #game-over-screen h1 {
+            font-size: 40px;
+            color: #ff3333;
+            margin-bottom: 10px;
+        }
+        #game-over-screen p {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        #high-score-text {
+            color: #ffcc00;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        #restart-btn {
+            padding: 12px 30px;
+            font-size: 18px;
+            background: #0f0;
+            color: #000;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .touch-zone {
+            display: none;
+        }
+        @media (max-width: 1024px), (pointer: coarse) {
+            .touch-zone { display: block; }
+        }
+
+        #joystick-container {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            z-index: 1000;
+            touch-action: none;
+        }
+        #joystick-knob {
+            position: absolute;
+            top: 35px;
+            left: 35px;
+            width: 50px;
+            height: 50px;
+            background: rgba(0, 255, 0, 0.6);
+            border-radius: 50%;
+        }
+
+        .touch-btn {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.6);
+            border: 2px solid #0f0;
+            color: #0f0;
+            border-radius: 50%;
+            width: 65px;
+            height: 65px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            z-index: 1000;
+            touch-action: none;
+        }
+        #btn-jump { bottom: 30px; right: 30px; }
+        #btn-sprint { bottom: 105px; right: 30px; }
+        .touch-btn:active { background: rgba(0, 255, 0, 0.4); }
+
+        #touch-look-zone {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 50%;
+            height: 100%;
+            z-index: 500;
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-status">
+        <span id="status-text">????? ?????!</span> - <span id="timer">15</span>s
+    </div>
+
+    <div id="info">
+        <div>????? 3D (????)</div>
+        <div>??????: <span id="score">0</span></div>
+        <div>X: <span id="posX">0</span></div>
+        <div>Y: <span id="posY">0</span></div>
+        <div>Z: <span id="posZ">0</span></div>
+        <div>FPS: <span id="fps">0</span></div>
+    </div>
+
+    <div id="game-over-screen">
+        <h1>?? ??????? ??! ??</h1>
+        <p id="final-score">???? ????: 0 ?????</p>
+        <p id="high-score-text">???? ??? ?????: 0 ?????</p>
+        <button id="restart-btn" onclick="resetGame()">????? ????? ??</button>
+    </div>
+
+    <div id="joystick-container" class="touch-zone">
+        <div id="joystick-knob"></div>
+    </div>
+    <div id="touch-look-zone" class="touch-zone"></div>
+    <div id="btn-jump" class="touch-btn touch-zone">???</div>
+    <div id="btn-sprint" class="touch-btn touch-zone">???</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb);
+        scene.fog = new THREE.FogExp2(0x87ceeb, 0.0012);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
+        camera.position.set(0, 3, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const keys = {};
+        let playerVelocity = new THREE.Vector3();
+        let canJump = true;
+        let yaw = 0;
+        let pitch = 0;
+        let headBobTimer = 0;
+
+        let gameState = 'hiding';
+        let hideTime = 15; // ????? ????? ?????? ??????
+        let survivedTime = 0;
+        let highScore = localStorage.getItem('hide_seek_highscore') || 0;
+        let timerInterval = null;
+        let baseSeekerSpeed = 0.25;
+
+        const colliders = [];
+
+        // ??? ?????? ?????? ???????
+        document.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (e.code === 'Space' && canJump && gameState !== 'caught') {
+                playerVelocity.y = 0.45;
+                canJump = false;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement === renderer.domElement && gameState !== 'caught') {
+                yaw -= e.movementX * 0.0025;
+                pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, pitch - e.movementY * 0.0025));
+            }
+        });
+
+        renderer.domElement.addEventListener('click', () => {
+            if (!('ontouchstart' in window) && gameState !== 'caught') {
+                renderer.domElement.requestPointerLock();
+            }
+        });
+
+        // ------------------ ???? ????? ------------------
+        let touchMoveVector = { x: 0, y: 0 };
+        let isSprintingTouch = false;
+        const joystickContainer = document.getElementById('joystick-container');
+        const joystickKnob = document.getElementById('joystick-knob');
+        let joystickTouchId = null;
+
+        joystickContainer.addEventListener('touchstart', (e) => {
+            const touch = e.changedTouches[0];
+            joystickTouchId = touch.identifier;
+            updateJoystick(touch);
+        });
+
+        joystickContainer.addEventListener('touchmove', (e) => {
+            for (let touch of e.changedTouches) {
+                if (touch.identifier === joystickTouchId) updateJoystick(touch);
+            }
+        });
+
+        const resetJoystick = () => {
+            joystickTouchId = null;
+            touchMoveVector = { x: 0, y: 0 };
+            joystickKnob.style.top = '35px';
+            joystickKnob.style.left = '35px';
+        };
+
+        joystickContainer.addEventListener('touchend', resetJoystick);
+        joystickContainer.addEventListener('touchcancel', resetJoystick);
+
+        function updateJoystick(touch) {
+            const rect = joystickContainer.getBoundingClientRect();
+            let deltaX = touch.clientX - (rect.left + rect.width / 2);
+            let deltaY = touch.clientY - (rect.top + rect.height / 2);
+            const distance = Math.hypot(deltaX, deltaY);
+            const maxRadius = 40;
+
+            if (distance > maxRadius) {
+                deltaX = (deltaX / distance) * maxRadius;
+                deltaY = (deltaY / distance) * maxRadius;
+            }
+
+            joystickKnob.style.left = `${35 + deltaX}px`;
+            joystickKnob.style.top = `${35 + deltaY}px`;
+
+            touchMoveVector.x = deltaX / maxRadius;
+            touchMoveVector.y = deltaY / maxRadius;
+        }
+
+        const touchLookZone = document.getElementById('touch-look-zone');
+        let lookTouchId = null;
+        let lastTouchPos = { x: 0, y: 0 };
+
+        touchLookZone.addEventListener('touchstart', (e) => {
+            const touch = e.changedTouches[0];
+            lookTouchId = touch.identifier;
+            lastTouchPos = { x: touch.clientX, y: touch.clientY };
+        });
+
+        touchLookZone.addEventListener('touchmove', (e) => {
+            for (let touch of e.changedTouches) {
+                if (touch.identifier === lookTouchId && gameState !== 'caught') {
+                    const deltaX = touch.clientX - lastTouchPos.x;
+                    const deltaY = touch.clientY - lastTouchPos.y;
+
+                    yaw -= deltaX * 0.004;
+                    pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, pitch - deltaY * 0.004));
+
+                    lastTouchPos = { x: touch.clientX, y: touch.clientY };
+                }
+            }
+        });
+
+        touchLookZone.addEventListener('touchend', () => { lookTouchId = null; });
+
+        document.getElementById('btn-jump').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (canJump && gameState !== 'caught') {
+                playerVelocity.y = 0.45;
+                canJump = false;
+            }
+        });
+
+        document.getElementById('btn-sprint').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            isSprintingTouch = !isSprintingTouch;
+            document.getElementById('btn-sprint').style.background = isSprintingTouch ? 'rgba(0, 255, 0, 0.5)' : 'rgba(0, 0, 0, 0.6)';
+        });
+
+        // ------------------ ?????? ???????? ------------------
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(2000, 2000),
+            new THREE.MeshStandardMaterial({ color: 0x4d8c43, roughness: 0.8 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444455, 0.6);
+        hemiLight.position.set(0, 300, 0);
+        scene.add(hemiLight);
+
+        const sun = new THREE.DirectionalLight(0xfffaed, 1.2);
+        sun.position.set(200, 400, 150);
+        sun.castShadow = true;
+        sun.shadow.mapSize.width = 2048;
+        sun.shadow.mapSize.height = 2048;
+        sun.shadow.camera.near = 0.5;
+        sun.shadow.camera.far = 1000;
+        const d = 500;
+        sun.shadow.camera.left = -d;
+        sun.shadow.camera.right = d;
+        sun.shadow.camera.top = d;
+        sun.shadow.camera.bottom = -d;
+        scene.add(sun);
+
+        function createBuilding(x, z, w, d, h, color) {
+            const mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(w, h, d),
+                new THREE.MeshStandardMaterial({ color: color, roughness: 0.5 })
+            );
+            mesh.position.set(x, h / 2, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+
+            colliders.push({
+                type: 'box',
+                minX: x - w / 2,
+                maxX: x + w / 2,
+                minZ: z - d / 2,
+                maxZ: z + d / 2
+            });
+        }
+
+        function createTree(x, z) {
+            const trunkRadius = 0.8;
+            const trunk = new THREE.Mesh(
+                new THREE.CylinderGeometry(trunkRadius * 0.8, trunkRadius, 6, 8),
+                new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.9 })
+            );
+            trunk.position.set(x, 3, z);
+            trunk.castShadow = true;
+            trunk.receiveShadow = true;
+            scene.add(trunk);
+
+            const leaves = new THREE.Mesh(
+                new THREE.ConeGeometry(4, 9, 8),
+                new THREE.MeshStandardMaterial({ color: 0x1e561e, roughness: 0.7 })
+            );
+            leaves.position.set(x, 9, z);
+            leaves.castShadow = true;
+            leaves.receiveShadow = true;
+            scene.add(leaves);
+
+            colliders.push({
+                type: 'cylinder',
+                x: x,
+                z: z,
+                radius: trunkRadius
+            });
+        }
+
+        const buildingColors = [0xb22222, 0x4682b4, 0xd2691e, 0x708090, 0x2e8b57];
+        for (let i = 0; i < 60; i++) {
+            const x = (Math.random() - 0.5) * 1600;
+            const z = (Math.random() - 0.5) * 1600;
+            if (Math.hypot(x, z) > 35) {
+                const w = 8 + Math.random() * 12;
+                const d = 8 + Math.random() * 12;
+                const h = 8 + Math.random() * 15;
+                const col = buildingColors[Math.floor(Math.random() * buildingColors.length)];
+                createBuilding(x, z, w, d, h, col);
+            }
+        }
+
+        for (let i = 0; i < 100; i++) {
+            const x = (Math.random() - 0.5) * 1600;
+            const z = (Math.random() - 0.5) * 1600;
+            if (Math.hypot(x, z) > 35) {
+                createTree(x, z);
+            }
+        }
+
+        // ------------------ ???? ?????? ??????? ???????? ------------------
+        const seekerGroup = new THREE.Group();
+        
+        const seekerBody = new THREE.Mesh(
+            new THREE.CylinderGeometry(1, 1, 4, 16),
+            new THREE.MeshStandardMaterial({ color: 0xcc0000, roughness: 0.3 })
+        );
+        seekerBody.position.y = 2;
+        seekerBody.castShadow = true;
+        seekerGroup.add(seekerBody);
+
+        const seekerHead = new THREE.Mesh(
+            new THREE.SphereGeometry(1.2, 16, 16),
+            new THREE.MeshStandardMaterial({ color: 0x222222 })
+        );
+        seekerHead.position.y = 4.5;
+        seekerGroup.add(seekerHead);
+
+        const eyeGeo = new THREE.SphereGeometry(0.3, 8, 8);
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+        leftEye.position.set(-0.4, 4.6, 1);
+        const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+        rightEye.position.set(0.4, 4.6, 1);
+        seekerGroup.add(leftEye);
+        seekerGroup.add(rightEye);
+
+        // ???? ?????? ??????
+        const seekerSpotlight = new THREE.SpotLight(0xff0000, 3, 100, Math.PI / 5, 0.5);
+        seekerSpotlight.position.set(0, 4.5, 0.5);
+        seekerSpotlight.target.position.set(0, 0, 20);
+        seekerGroup.add(seekerSpotlight);
+        seekerGroup.add(seekerSpotlight.target);
+
+        seekerGroup.position.set(0, 0, -100);
+        scene.add(seekerGroup);
+
+        // ------------------ ???? ??? ??????? ------------------
+        function checkCollision(pos, radius) {
+            for (let col of colliders) {
+                if (col.type === 'box') {
+                    const closestX = Math.max(col.minX, Math.min(pos.x, col.maxX));
+                    const closestZ = Math.max(col.minZ, Math.min(pos.z, col.maxZ));
+                    const distX = pos.x - closestX;
+                    const distZ = pos.z - closestZ;
+                    if (Math.hypot(distX, distZ) < radius) return true;
+                } else if (col.type === 'cylinder') {
+                    const distX = pos.x - col.x;
+                    const distZ = pos.z - col.z;
+                    if (Math.hypot(distX, distZ) < (radius + col.radius)) return true;
+                }
+            }
+            return false;
+        }
+
+        // ------------------ ???? ????? ??????? ------------------
+        function startTimer() {
+            clearInterval(timerInterval);
+            hideTime = 15;
+            survivedTime = 0;
+            baseSeekerSpeed = 0.25;
+            gameState = 'hiding';
+
+            document.getElementById('status-text').textContent = '????? ?????!';
+            document.getElementById('status-text').style.color = '#ffcc00';
+            document.getElementById('game-status').style.borderColor = '#ffcc00';
+            document.getElementById('timer').textContent = hideTime;
+            document.getElementById('score').textContent = 0;
+
+            timerInterval = setInterval(() => {
+                if (gameState === 'hiding') {
+                    hideTime--;
+                    document.getElementById('timer').textContent = hideTime;
+                    if (hideTime <= 0) {
+                        gameState = 'seeking';
+                        document.getElementById('status-text').textContent = '?????? ???? ???!';
+                        document.getElementById('status-text').style.color = '#ff3333';
+                        document.getElementById('game-status').style.borderColor = '#ff3333';
+                    }
+                } else if (gameState === 'seeking') {
+                    survivedTime++;
+                    document.getElementById('timer').textContent = `${survivedTime}s ????`;
+                    document.getElementById('score').textContent = survivedTime * 10;
+                    
+                    // ????? ???? ?????? ???????? ?????? ??????
+                    baseSeekerSpeed += 0.005;
+                }
+            }, 1000);
+        }
+
+        function resetGame() {
+            document.getElementById('game-over-screen').style.display = 'none';
+            camera.position.set(0, 3, 0);
+            seekerGroup.position.set(0, 0, -120);
+            yaw = 0;
+            pitch = 0;
+            startTimer();
+        }
+
+        startTimer();
+
+        // ------------------ ??????? ??????? ------------------
+        let fps = 0;
+        let lastTime = Date.now();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (gameState !== 'caught') {
+                const isSprinting = keys['ShiftLeft'] || keys['ShiftRight'] || isSprintingTouch;
+                const speed = isSprinting ? 0.42 : 0.22;
+
+                const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+                const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+
+                let moveDelta = new THREE.Vector3();
+
+                // ??? ?????? ???? WASD
+                if (keys['KeyW'] || keys['ArrowUp']) moveDelta.addScaledVector(forward, speed);
+                if (keys['KeyS'] || keys['ArrowDown']) moveDelta.addScaledVector(forward, -speed);
+                if (keys['KeyA'] || keys['ArrowLeft']) moveDelta.addScaledVector(right, -speed);
+                if (keys['KeyD'] || keys['ArrowRight']) moveDelta.addScaledVector(right, speed);
+
+                if (touchMoveVector.x !== 0 || touchMoveVector.y !== 0) {
+                    moveDelta.addScaledVector(right, touchMoveVector.x * speed);
+                    moveDelta.addScaledVector(forward, -touchMoveVector.y * speed);
+                }
+
+                // ???? ?????? ????????
+                const playerRadius = 0.8;
+                const oldPos = camera.position.clone();
+
+                camera.position.x += moveDelta.x;
+                if (checkCollision(camera.position, playerRadius)) camera.position.x = oldPos.x;
+
+                camera.position.z += moveDelta.z;
+                if (checkCollision(camera.position, playerRadius)) camera.position.z = oldPos.z;
+
+                const isMoving = moveDelta.lengthSq() > 0;
+
+                // ????????
+                playerVelocity.y -= 0.02;
+                camera.position.y += playerVelocity.y;
+
+                if (isMoving && canJump) {
+                    headBobTimer += isSprinting ? 0.25 : 0.15;
+                    camera.position.y = 2 + Math.sin(headBobTimer) * 0.1;
+                } else if (camera.position.y <= 2) {
+                    camera.position.y = 2;
+                    playerVelocity.y = 0;
+                    canJump = true;
+                }
+
+                // ???? ???????
+                camera.position.x = Math.max(-950, Math.min(950, camera.position.x));
+                camera.position.z = Math.max(-950, Math.min(950, camera.position.z));
+
+                const direction = new THREE.Vector3(0, 0, -1)
+                    .applyAxisAngle(new THREE.Vector3(1, 0, 0), pitch)
+                    .applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+                camera.lookAt(camera.position.clone().add(direction));
+
+                // ???? ??????? ?????? ??????? ???????
+                if (gameState === 'seeking') {
+                    const dirToPlayer = new THREE.Vector3().subVectors(camera.position, seekerGroup.position);
+                    dirToPlayer.y = 0;
+                    const distance = dirToPlayer.length();
+
+                    // ????? ?????? ??? ??? ?????? ???? ?? ????? ?????
+                    let currentSeekerSpeed = baseSeekerSpeed;
+                    if (distance < 30) {
+                        currentSeekerSpeed += 0.08; // ?????? ???? ??? ????????
+                    }
+
+                    if (distance > 1) {
+                        dirToPlayer.normalize();
+                        const nextSeekerPos = seekerGroup.position.clone().addScaledVector(dirToPlayer, currentSeekerSpeed);
+
+                        if (!checkCollision(nextSeekerPos, 1.2)) {
+                            seekerGroup.position.copy(nextSeekerPos);
+                        } else {
+                            const slidePos = seekerGroup.position.clone().addScaledVector(dirToPlayer, currentSeekerSpeed * 0.5);
+                            slidePos.x += (Math.random() - 0.5) * 0.2;
+                            if (!checkCollision(slidePos, 1.2)) {
+                                seekerGroup.position.copy(slidePos);
+                            }
+                        }
+
+                        seekerGroup.lookAt(camera.position.x, seekerGroup.position.y, camera.position.z);
+                    }
+
+                    // ??? ??????? ??????? ???????
+                    if (distance < 2.8) {
+                        gameState = 'caught';
+                        clearInterval(timerInterval);
+                        document.exitPointerLock();
+
+                        if (survivedTime > highScore) {
+                            highScore = survivedTime;
+                            localStorage.setItem('hide_seek_highscore', highScore);
+                        }
+
+                        document.getElementById('final-score').textContent = `???? ????: ${survivedTime} ????? (${survivedTime * 10} ????)`;
+                        document.getElementById('high-score-text').textContent = `???? ??? ?????: ${highScore} ?????`;
+                        document.getElementById('game-over-screen').style.display = 'flex';
+                    }
+                }
+            }
+
+            document.getElementById('posX').textContent = camera.position.x.toFixed(1);
+            document.getElementById('posY').textContent = camera.position.y.toFixed(1);
+            document.getElementById('posZ').textContent = camera.position.z.toFixed(1);
+
+            fps++;
+            if (Date.now() - lastTime >= 1000) {
+                document.getElementById('fps').textContent = fps;
+                fps = 0;
+                lastTime = Date.now();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
